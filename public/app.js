@@ -237,10 +237,25 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !state.token) return;
     clearNotifications();
-    if (state.socket && !state.socket.connected) state.socket.connect();
-    else syncMessages();
+    checkAlive();
+    refreshProfile();
     reloadFromStore();
   });
+
+  // A phone that slept may hold a dead connection that still looks "connected".
+  function checkAlive() {
+    const s = state.socket;
+    if (!s) return;
+    if (!s.connected) { s.connect(); return; }
+    s.timeout(3000).emit('alive', (err, ids) => {
+      if (err) { s.disconnect(); s.connect(); return; }   // dead: reconnect now
+      if (state.partner) setPresence(ids.includes(state.partner.id));
+      syncMessages(); flushOutbox();
+    });
+  }
+  setInterval(() => { if (document.visibilityState === 'visible') checkAlive(); }, 15000);
+  window.addEventListener('focus', checkAlive);
+  window.addEventListener('pageshow', checkAlive);
 
   async function syncMessages() {
     try {
@@ -582,6 +597,18 @@
     const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
     return Uint8Array.from(raw, (c) => c.charCodeAt(0));
   }
+  $('#notifTest').addEventListener('click', async () => {
+    const btn = $('#notifTest'); btn.disabled = true;
+    try {
+      if (!pushSupported()) return toast('This browser/app does not support notifications');
+      if (Notification.permission === 'denied') return toast('Notifications are blocked. Allow them in phone Settings → Apps → Hubb → Notifications');
+      if (Notification.permission !== 'granted') { await enableNotifications(); if (Notification.permission !== 'granted') return; }
+      await subscribePush();
+      const { devices } = await api('/api/push/test', { method: 'POST' });
+      toast(devices ? 'Test sent — a notification should appear in a few seconds' : 'This device is not registered for notifications yet');
+    } catch (e) { toast('Test failed: ' + e.message); }
+    finally { btn.disabled = false; }
+  });
   $('#notifEnable').addEventListener('click', enableNotifications);
   $('#notifBtn').addEventListener('click', enableNotifications);
   $('#notifDismiss').addEventListener('click', () => { $('#notifBanner').classList.add('hidden'); DB.kv.set('notifDismissed', true); });

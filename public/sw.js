@@ -1,7 +1,7 @@
 /* Hubb service worker: offline app shell, push notifications, background delivery of queued messages. */
 importScripts('/idb.js');
 
-const CACHE = 'hubb-v6';
+const CACHE = 'hubb-v7';
 const SHELL = [
   '/', '/index.html', '/app.css', '/app.js', '/idb.js', '/manifest.webmanifest',
   '/socket.io/socket.io.min.js',
@@ -63,6 +63,9 @@ async function handlePush(data) {
     HubbDB.kv.get('unread').catch(() => null),
   ]);
   // App open on screen: the page plays its own soft chime, no system banner needed.
+  if (data.test) {
+    return self.registration.showNotification(data.title, { body: data.body, icon: '/icons/icon-192.png', badge: '/icons/badge-72.png', tag: 'hubb-test', vibrate: [80, 60, 80] });
+  }
   if (wins.some((w) => w.visibilityState === 'visible')) { await saving; return; }
 
   const name = data.title || 'Hubb';
