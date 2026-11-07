@@ -631,7 +631,17 @@
   window.addEventListener('appinstalled', () => { state.installEvt = null; $('#installBtn').classList.add('hidden'); toast('Hubb installed 💞'); });
 
   function registerSW() {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if (!('serviceWorker' in navigator)) return;
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((reg) => {
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch(() => {});
+    // A new version was installed: reload once so it's used straight away
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !reloaded) { reloaded = true; location.reload(); }
+    });
   }
 
   // refresh relative day labels after midnight

@@ -12,7 +12,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" href="/icons/favicon-32.png">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/app.css?v=8">
 </head>
 <body>
   <!-- Splash while the app restores the saved session -->
@@ -139,13 +139,13 @@
       <div><div class="s-title">Install Hubb</div><div class="s-sub">Add it to your home screen</div></div>
       <button type="button" class="btn-small" id="installBtn2">Install</button>
     </div>
-    <p class="sheet-foot">Signed in permanently on this device 💗</p>
+    <p class="sheet-foot">Signed in permanently on this device 💗<br><span style="opacity:.7">Hubb version 8</span></p>
   </div>
 
   <div class="toast hidden" id="toast"></div>
 
   <script src="/socket.io/socket.io.min.js"></script>
-  <script src="/idb.js"></script>
-  <script src="/app.js"></script>
+  <script src="/idb.js?v=8"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>

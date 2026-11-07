@@ -1,7 +1,7 @@
 /* Hubb service worker: offline app shell, push notifications, background delivery of queued messages. */
 importScripts('/idb.js');
 
-const CACHE = 'hubb-v7';
+const CACHE = 'hubb-v8';
 const SHELL = [
   '/', '/index.html', '/app.css', '/app.js', '/idb.js', '/manifest.webmanifest',
   '/socket.io/socket.io.min.js',
@@ -35,14 +35,11 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
-  // stale-while-revalidate for static files
+  // network-first: always the newest version when online, cached copy when offline
   e.respondWith(
-    caches.match(req).then((cached) => {
-      const net = fetch(req)
-        .then((res) => { if (res.ok) caches.open(CACHE).then((c) => c.put(req, res.clone())); return res; })
-        .catch(() => cached);
-      return cached || net;
-    })
+    fetch(req)
+      .then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; })
+      .catch(() => caches.match(req, { ignoreSearch: true }))
   );
 });
 
