@@ -1,7 +1,7 @@
 /* Hubb service worker: offline app shell, push notifications, background delivery of queued messages. */
 importScripts('/idb.js');
 
-const CACHE = 'hubb-v9';
+const CACHE = 'hubb-v6';
 const SHELL = [
   '/', '/index.html', '/app.css', '/app.js', '/idb.js', '/manifest.webmanifest',
   '/socket.io/socket.io.min.js',
@@ -35,11 +35,14 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
-  // network-first: always the newest version when online, cached copy when offline
+  // stale-while-revalidate for static files
   e.respondWith(
-    fetch(req)
-      .then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; })
-      .catch(() => caches.match(req, { ignoreSearch: true }))
+    caches.match(req).then((cached) => {
+      const net = fetch(req)
+        .then((res) => { if (res.ok) caches.open(CACHE).then((c) => c.put(req, res.clone())); return res; })
+        .catch(() => cached);
+      return cached || net;
+    })
   );
 });
 
@@ -60,9 +63,6 @@ async function handlePush(data) {
     HubbDB.kv.get('unread').catch(() => null),
   ]);
   // App open on screen: the page plays its own soft chime, no system banner needed.
-  if (data.test) {
-    return self.registration.showNotification(data.title, { body: data.body, icon: '/icons/icon-192.png', badge: '/icons/badge-72.png', tag: 'hubb-test', vibrate: [80, 60, 80] });
-  }
   if (wins.some((w) => w.visibilityState === 'visible')) { await saving; return; }
 
   const name = data.title || 'Hubb';
