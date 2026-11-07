@@ -131,6 +131,7 @@
     if (me) { state.me = me; await DB.kv.set('me', me); }
     if (partner !== undefined) { state.partner = partner; await DB.kv.set('partner', partner); }
     renderHeader();
+    if (!$('#chat').classList.contains('hidden')) renderAll(true);
   }
   async function refreshProfile() {
     try {
@@ -154,13 +155,21 @@
     if (!state.partner) return;
     $('#presenceDot').classList.toggle('on', on);
     const s = $('#partnerStatus');
-    s.textContent = on ? 'online' : 'offline';
+    s.textContent = on ? 'Active now' : 'Away';
     s.classList.toggle('on', on);
   }
 
   // ---------------- Real-time connection ----------------
   function connect() {
-    if (state.socket || !state.token || typeof io === 'undefined') { if (typeof io === 'undefined') setNet(false); return; }
+    if (state.socket || !state.token) return;
+    if (typeof io === 'undefined') {
+      const sc = document.createElement('script');
+      sc.src = '/socket.io/socket.io.min.js?r=' + Date.now();
+      sc.onload = () => connect();
+      sc.onerror = () => setTimeout(connect, 3000);
+      document.head.appendChild(sc);
+      return;
+    }
     const s = io({ auth: { token: state.token }, transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 500, reconnectionDelayMax: 4000 });
     state.socket = s;
     s.on('connect', async () => { setNet(true); setPresence(state.partnerOnline); await syncMessages(); flushOutbox(); });
@@ -223,7 +232,7 @@
     const known = state.msgs.get(m.id);
     if (known && !known.pending) return;
     await storeServer(m);
-    if (state.me && m.sender_id !== state.me.id) chime();
+    if (state.me && Number(m.sender_id) !== Number(state.me.id)) chime();
   }
 
   // Messages delivered by the service worker or a push while the page wasn't looking
@@ -294,11 +303,25 @@
   const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
 
   function rowFor(m, prev) {
-    const mine = state.me && m.sender_id === state.me.id;
+    const mine = !!state.me && Number(m.sender_id) === Number(state.me.id);
     const row = document.createElement('div');
     row.className = 'row ' + (mine ? 'mine' : 'theirs') + (m.pending ? ' pending' : '');
     row.dataset.id = m.id;
     if (prev && prev.sender_id === m.sender_id && m.created_at - prev.created_at < 3 * 60 * 1000 && dayKey(prev.created_at) === dayKey(m.created_at)) row.classList.add('cont');
+    // Show who sent it: name above the first message of each group, partner's photo beside their messages
+    const who = mine ? state.me : state.partner;
+    if (!row.classList.contains('cont')) {
+      const label = document.createElement('div');
+      label.className = 'sender';
+      label.textContent = mine ? 'You' : (who ? who.name : 'Partner');
+      row.appendChild(label);
+    }
+    if (!mine) {
+      const av = document.createElement('div');
+      av.className = 'avatar tiny' + (row.classList.contains('cont') ? ' ghost' : '');
+      setAvatar(av, who);
+      row.appendChild(av);
+    }
     const b = document.createElement('div');
     b.className = 'bubble' + (isJumbo(m.text) ? ' jumbo' : '');
     b.appendChild(document.createTextNode(m.text));

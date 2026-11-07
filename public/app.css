@@ -141,7 +141,12 @@ input, textarea { font: inherit; color: inherit; }
   align-self: center; margin: 14px 0 10px; padding: 4px 12px; border-radius: 999px;
   font-size: 12px; font-weight: 600; color: var(--muted); background: var(--bg-2);
 }
-.row { display: flex; margin-top: 8px; }
+.row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 8px; margin-top: 10px; }
+.sender { order: -2; flex-basis: 100%; font-size: 12px; font-weight: 600; color: var(--muted); margin: 0 6px 3px; }
+.row.mine .sender { text-align: right; }
+.row.theirs .sender { padding-left: 36px; }
+.avatar.tiny { width: 28px; height: 28px; font-size: 11px; order: -1; }
+.avatar.tiny.ghost { visibility: hidden; }
 .row.cont { margin-top: 2px; }
 .row.mine { justify-content: flex-end; }
 .bubble {

@@ -158,8 +158,8 @@ function throttle(ip) {
 // as environment variables, or run:  node scripts/set-user.js <username> <password> "<Name>"
 function setUser(username, password, name) {
   username = String(username || '').trim();
-  if (!/^[A-Za-z0-9_.-]{3,30}$/.test(username)) throw new Error(`Bad username "${username}" (3-30 letters, numbers, . - _)`);
-  if (!password || String(password).length < 6) throw new Error(`Password for ${username} must be at least 6 characters`);
+  if (!/^[A-Za-z0-9_.-]{2,30}$/.test(username)) throw new Error(`Bad username "${username}" (2-30 letters, numbers, . - _)`);
+  if (!password || String(password).length < 4) throw new Error(`Password for ${username} must be at least 4 characters`);
   const existing = q.userByName.get(username);
   if (existing) {
     if (!bcrypt.compareSync(String(password), existing.pass)) q.updatePass.run(bcrypt.hashSync(String(password), 10), existing.id);
