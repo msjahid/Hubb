@@ -1,7 +1,7 @@
 /* Hubb service worker: offline app shell, push notifications, background delivery of queued messages. */
 importScripts('/idb.js');
 
-const CACHE = 'hubb-v5';
+const CACHE = 'hubb-v6';
 const SHELL = [
   '/', '/index.html', '/app.css', '/app.js', '/idb.js', '/manifest.webmanifest',
   '/socket.io/socket.io.min.js',
@@ -71,24 +71,29 @@ async function handlePush(data) {
   const lines = list.slice(-6).map((m) => m.text.replace(/\s+/g, ' '));
   if (n > 6) lines.unshift(`+${n - 6} earlier`);
 
+  const android = /Android/i.test(self.navigator.userAgent);
   const options = {
     body: lines.join('\n'),
     icon: icon || '/icons/icon-192.png',   // partner's round profile photo
     badge: '/icons/badge-72.png',
-    tag: 'hubb-chat',
+    // A NEW tag each time: Android only pops a banner at the top for a newly posted
+    // notification, not for an update of one that's already in the panel.
+    tag: 'hubb-chat-' + Date.now(),
     renotify: true,
+    requireInteraction: false,
+    silent: false,
     timestamp: Date.now(),
-    vibrate: [40, 60, 40],
+    vibrate: [80, 60, 80],
     data: { url: '/' },
-    actions: [
-      { action: 'reply', title: '💬 Reply', type: 'text', placeholder: `Message ${name}…` },
-      { action: 'heart', title: '❤️ Send love' },
-    ],
+    actions: android
+      ? [{ action: 'reply', title: '💬 Reply' }, { action: 'heart', title: '❤️ Send love' }]
+      : [{ action: 'reply', title: '💬 Reply', type: 'text', placeholder: `Message ${name}…` }, { action: 'heart', title: '❤️ Send love' }],
   };
   const title = n > 1 ? `${name} · ${n} new messages` : name;
+  // Remove the previous Hubb notification, then post the stacked one fresh (so it pops up).
+  try { (await self.registration.getNotifications()).forEach((x) => x.close()); } catch (_) {}
   try { await self.registration.showNotification(title, options); }
   catch (_) {
-    // Platforms that don't allow inline-reply actions: same notification with simple buttons.
     options.actions = [{ action: 'reply', title: '💬 Reply' }, { action: 'heart', title: '❤️ Send love' }];
     await self.registration.showNotification(title, options);
   }

@@ -192,6 +192,19 @@ function auth(req, res, next) {
   next();
 }
 
+// Android app (Trusted Web Activity) verification — lets the Hubb Android app open full-screen
+// and send notifications as "Hubb" without the website address.
+// Set ANDROID_PACKAGE (e.g. app.hubb.twa) and ANDROID_SHA256 (fingerprint from PWABuilder; several allowed, comma-separated).
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  const pkg = process.env.ANDROID_PACKAGE;
+  const fps = (process.env.ANDROID_SHA256 || '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (!pkg || !fps.length) return res.json([]);
+  res.json([{
+    relation: ['delegate_permission/common.handle_all_urls'],
+    target: { namespace: 'android_app', package_name: pkg, sha256_cert_fingerprints: fps },
+  }]);
+});
+
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 app.post('/api/login', (req, res) => {

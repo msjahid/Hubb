@@ -167,7 +167,7 @@
     try {
       await DB.kv.set('unread', []);
       const reg = await navigator.serviceWorker.getRegistration();
-      if (reg) (await reg.getNotifications({ tag: 'hubb-chat' })).forEach((n) => n.close());
+      if (reg) (await reg.getNotifications()).forEach((n) => n.close());
     } catch (_) {}
   }
 
