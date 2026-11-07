@@ -140,7 +140,39 @@
       if (d.partner) setPresence(d.online.includes(d.partner.id));
     } catch (_) {}
   }
+  // Build a round version of the partner's photo for notifications (stored for the service worker)
+  async function makeNotifIcon(user) {
+    if (!user) return;
+    const key = user.id + ':' + (user.avatar ? user.avatar.length + user.avatar.slice(-40) : user.name);
+    if ((await DB.kv.get('notifIconKey')) === key) return;
+    const S = 192, c = document.createElement('canvas'); c.width = c.height = S;
+    const g = c.getContext('2d');
+    g.beginPath(); g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); g.closePath(); g.clip();
+    if (user.avatar) {
+      const img = await new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = user.avatar; });
+      if (img) g.drawImage(img, 0, 0, S, S);
+    } else {
+      const gr = g.createLinearGradient(0, 0, S, S);
+      gr.addColorStop(0, '#FF8A80'); gr.addColorStop(0.55, '#E8508A'); gr.addColorStop(1, '#7C4DC4');
+      g.fillStyle = gr; g.fillRect(0, 0, S, S);
+      g.fillStyle = '#fff'; g.font = '600 78px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(initials(user.name), S / 2, S / 2 + 4);
+    }
+    await DB.kv.set('notifIcon', c.toDataURL('image/png'));
+    await DB.kv.set('notifIconKey', key);
+  }
+
+  // Opening the app counts as reading: clear the stacked notification
+  async function clearNotifications() {
+    try {
+      await DB.kv.set('unread', []);
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) (await reg.getNotifications({ tag: 'hubb-chat' })).forEach((n) => n.close());
+    } catch (_) {}
+  }
+
   function renderHeader() {
+    makeNotifIcon(state.partner).catch(() => {});
     const p = state.partner;
     $('#partnerName').textContent = p ? p.name : 'Waiting for your partner…';
     setAvatar($('#partnerAvatar'), p);
@@ -204,6 +236,7 @@
   window.addEventListener('offline', () => setNet(false));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !state.token) return;
+    clearNotifications();
     if (state.socket && !state.socket.connected) state.socket.connect();
     else syncMessages();
     reloadFromStore();
@@ -244,7 +277,11 @@
     if (state.msgs.size !== before || pendingAfter !== pendingBefore) renderAll(true);
   }
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'outbox-synced') reloadFromStore(); });
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (!e.data) return;
+      if (e.data.type === 'outbox-synced') reloadFromStore();
+      if (e.data.type === 'focus-input') { reloadFromStore(); $('#input').focus(); }
+    });
   }
 
   // ---------------- Sending (offline-first outbox) ----------------
@@ -369,6 +406,8 @@
 
   function enterChat() {
     show('#chat');
+    clearNotifications();
+    if (location.search.includes('reply=1')) { history.replaceState(null, '', '/'); setTimeout(() => $('#input').focus(), 300); }
     renderHeader();
     renderAll();
     setupNotifBanner();

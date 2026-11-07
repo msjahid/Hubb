@@ -123,7 +123,8 @@ function saveMessage(user, data) {
   if (partner) {
     pushTo(partner.id, {
       title: user.name,
-      body: text.length > 140 ? text.slice(0, 140) + '…' : text,
+      body: text.length > 200 ? text.slice(0, 200) + '…' : text,
+      senderId: user.id,
       message: text.length <= 1500 ? msg : null,
     });
   }
@@ -297,3 +298,13 @@ io.on('connection', (socket) => {
 });
 
 if (require.main === module) server.listen(PORT, () => console.log(`Hubb is running on http://localhost:${PORT}`));
+
+// Clean shutdown when Railway (or any host) stops/redeploys the app
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => {
+    console.log(`${sig} received — shutting down cleanly`);
+    io.close();
+    server.close(() => { try { db.close(); } catch (_) {} process.exit(0); });
+    setTimeout(() => process.exit(0), 5000).unref();
+  });
+}
