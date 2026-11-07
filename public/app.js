@@ -4,6 +4,7 @@
   const $ = (s) => document.querySelector(s);
   const DB = self.HubbDB;
 
+  const diag = { live: 'Not started', err: '' };
   const state = {
     token: null,
     me: null,
@@ -204,11 +205,14 @@
     }
     const s = io({ auth: { token: state.token }, transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 500, reconnectionDelayMax: 4000 });
     state.socket = s;
+    s.on('connect', () => { diag.live = 'Connected (' + s.io.engine.transport.name + ')'; diag.err = ''; });
     s.on('connect', async () => { setNet(true); setPresence(state.partnerOnline); await syncMessages(); flushOutbox(); });
     s.on('disconnect', (reason) => {
       setNet(navigator.onLine ? 'reconnecting' : false);
       if (reason === 'io server disconnect') setTimeout(() => s.connect(), 1000);
     });
+    s.on('connect_error', (err) => { diag.live = 'Not connected'; diag.err = (err && (err.message + (err.description ? ' / ' + (err.description.message || err.description) : ''))) || 'unknown'; });
+    s.on('disconnect', (r) => { diag.live = 'Disconnected'; diag.err = r; });
     s.on('connect_error', (err) => {
       if (err && err.message === 'unauthorized') { signedOut(); return; }
       setNet(navigator.onLine ? 'reconnecting' : false);
@@ -237,10 +241,25 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !state.token) return;
     clearNotifications();
-    if (state.socket && !state.socket.connected) state.socket.connect();
-    else syncMessages();
+    checkAlive();
+    refreshProfile();
     reloadFromStore();
   });
+
+  // A phone that slept may hold a dead connection that still looks "connected".
+  function checkAlive() {
+    const s = state.socket;
+    if (!s) return;
+    if (!s.connected) { s.connect(); return; }
+    s.timeout(3000).emit('alive', (err, ids) => {
+      if (err) { s.disconnect(); s.connect(); return; }   // dead: reconnect now
+      if (state.partner) setPresence(ids.includes(state.partner.id));
+      syncMessages(); flushOutbox();
+    });
+  }
+  setInterval(() => { if (document.visibilityState === 'visible') checkAlive(); }, 15000);
+  window.addEventListener('focus', checkAlive);
+  window.addEventListener('pageshow', checkAlive);
 
   async function syncMessages() {
     try {
@@ -261,11 +280,25 @@
     return isNew;
   }
 
+  async function instantNotify(m) {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      const reg = await navigator.serviceWorker.ready;
+      const target = navigator.serviceWorker.controller || reg.active;
+      if (!target) return;
+      const text = m.text.length > 200 ? m.text.slice(0, 200) + '…' : m.text;
+      target.postMessage({ type: 'notify', payload: { title: state.partner ? state.partner.name : 'Hubb', body: text, messageId: m.id } });
+    } catch (_) {}
+  }
+
   async function receive(m) {
     const known = state.msgs.get(m.id);
     if (known && !known.pending) return;
     await storeServer(m);
-    if (state.me && Number(m.sender_id) !== Number(state.me.id)) chime();
+    if (state.me && Number(m.sender_id) !== Number(state.me.id)) {
+      if (document.visibilityState === 'visible') chime();
+      else instantNotify(m);   // app in background: show the banner right now (system sound plays with it)
+    }
   }
 
   // Messages delivered by the service worker or a push while the page wasn't looking
@@ -500,7 +533,25 @@
   input.addEventListener('focus', () => { if (touch) { panel.classList.add('hidden'); $('#emojiBtn').classList.remove('active'); } });
 
   // ---------------- Profile sheet ----------------
+  async function renderDiag() {
+    const el = $('#diag'); if (!el) return;
+    const lines = [];
+    const sock = state.socket;
+    lines.push('Live connection: ' + (sock && sock.connected ? '✅ ' + diag.live : '❌ ' + diag.live + (diag.err ? ' — ' + diag.err : '')));
+    lines.push('Socket library: ' + (typeof io === 'undefined' ? '❌ not loaded' : '✅ loaded'));
+    lines.push('Internet: ' + (navigator.onLine ? '✅' : '❌ offline'));
+    lines.push('Notification permission: ' + ('Notification' in window ? Notification.permission : 'not supported'));
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+      lines.push('Push registered on this device: ' + (sub ? '✅' : '❌'));
+    } catch (e) { lines.push('Push check error: ' + e.message); }
+    lines.push('Partner online: ' + (state.partnerOnline ? 'yes' : 'no'));
+    el.textContent = lines.join('\n');
+  }
+
   function openSheet() {
+    renderDiag();
     $('#nameInput').value = state.me ? state.me.name : '';
     $('#soundToggle').checked = state.soundOn;
     updateNotifUI();
@@ -582,6 +633,18 @@
     const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
     return Uint8Array.from(raw, (c) => c.charCodeAt(0));
   }
+  $('#notifTest').addEventListener('click', async () => {
+    const btn = $('#notifTest'); btn.disabled = true;
+    try {
+      if (!pushSupported()) return toast('This browser/app does not support notifications');
+      if (Notification.permission === 'denied') return toast('Notifications are blocked. Allow them in phone Settings → Apps → Hubb → Notifications');
+      if (Notification.permission !== 'granted') { await enableNotifications(); if (Notification.permission !== 'granted') return; }
+      await subscribePush();
+      const { devices } = await api('/api/push/test', { method: 'POST' });
+      toast(devices ? 'Test sent — a notification should appear in a few seconds' : 'This device is not registered for notifications yet');
+    } catch (e) { toast('Test failed: ' + e.message); }
+    finally { btn.disabled = false; }
+  });
   $('#notifEnable').addEventListener('click', enableNotifications);
   $('#notifBtn').addEventListener('click', enableNotifications);
   $('#notifDismiss').addEventListener('click', () => { $('#notifBanner').classList.add('hidden'); DB.kv.set('notifDismissed', true); });
@@ -604,7 +667,17 @@
   window.addEventListener('appinstalled', () => { state.installEvt = null; $('#installBtn').classList.add('hidden'); toast('Hubb installed 💞'); });
 
   function registerSW() {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if (!('serviceWorker' in navigator)) return;
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((reg) => {
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch(() => {});
+    // A new version was installed: reload once so it's used straight away
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !reloaded) { reloaded = true; location.reload(); }
+    });
   }
 
   // refresh relative day labels after midnight

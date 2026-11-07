@@ -125,6 +125,7 @@ function saveMessage(user, data) {
       title: user.name,
       body: text.length > 200 ? text.slice(0, 200) + '…' : text,
       senderId: user.id,
+      messageId: msg.id,
       message: text.length <= 1500 ? msg : null,
     });
   }
@@ -255,6 +256,13 @@ app.post('/api/messages', auth, (req, res) => {
   }
 });
 
+// "Send test notification" button: pushes to this user's own devices
+app.post('/api/push/test', auth, (req, res) => {
+  const n = q.subsFor.all(req.user.id).length;
+  pushTo(req.user.id, { title: 'Hubb', body: 'Notifications are working 💞', test: true });
+  res.json({ devices: n });
+});
+
 app.get('/api/push/key', (req, res) => res.json({ key: vapid.publicKey }));
 
 app.post('/api/push/subscribe', auth, (req, res) => {
@@ -274,7 +282,7 @@ app.use(
 
 // ---------- Socket.IO (real-time) ----------
 const server = http.createServer(app);
-io = new Server(server, { pingInterval: 20000, pingTimeout: 20000, maxHttpBufferSize: 1e6 });
+io = new Server(server, { pingInterval: 10000, pingTimeout: 8000, maxHttpBufferSize: 1e6 });
 const online = new Map(); // userId -> open connection count
 
 io.use((socket, next) => {
@@ -300,6 +308,8 @@ io.on('connection', (socket) => {
       reply({ ok: false, error: e.code || 'error', message: e.message });
     }
   });
+
+  socket.on('alive', (ack) => { if (typeof ack === 'function') ack([...online.keys()]); });
 
   socket.on('disconnect', () => {
     const n = (online.get(uid) || 1) - 1;

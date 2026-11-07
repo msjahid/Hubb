@@ -1,7 +1,7 @@
 /* Hubb service worker: offline app shell, push notifications, background delivery of queued messages. */
 importScripts('/idb.js');
 
-const CACHE = 'hubb-v6';
+const CACHE = 'hubb-v10';
 const SHELL = [
   '/', '/index.html', '/app.css', '/app.js', '/idb.js', '/manifest.webmanifest',
   '/socket.io/socket.io.min.js',
@@ -35,14 +35,11 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
-  // stale-while-revalidate for static files
+  // network-first: always the newest version when online, cached copy when offline
   e.respondWith(
-    caches.match(req).then((cached) => {
-      const net = fetch(req)
-        .then((res) => { if (res.ok) caches.open(CACHE).then((c) => c.put(req, res.clone())); return res; })
-        .catch(() => cached);
-      return cached || net;
-    })
+    fetch(req)
+      .then((res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; })
+      .catch(() => caches.match(req, { ignoreSearch: true }))
   );
 });
 
@@ -51,6 +48,11 @@ self.addEventListener('push', (e) => {
   let data = {};
   try { data = e.data ? e.data.json() : {}; } catch (_) {}
   e.waitUntil(handlePush(data));
+});
+
+// The running app hands over messages it received instantly over its live connection
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'notify') e.waitUntil(handlePush({ ...e.data.payload, fromPage: true }));
 });
 
 // Unread messages are stacked into ONE notification until the app is opened.
@@ -63,7 +65,17 @@ async function handlePush(data) {
     HubbDB.kv.get('unread').catch(() => null),
   ]);
   // App open on screen: the page plays its own soft chime, no system banner needed.
-  if (wins.some((w) => w.visibilityState === 'visible')) { await saving; return; }
+  if (data.test) {
+    return self.registration.showNotification(data.title, { body: data.body, icon: '/icons/icon-192.png', badge: '/icons/badge-72.png', tag: 'hubb-test', vibrate: [80, 60, 80] });
+  }
+  if (!data.fromPage && wins.some((w) => w.visibilityState === 'visible')) { await saving; return; }
+  // Same message may arrive twice (instantly from the open app, then via push): show it once.
+  const id = data.messageId || (data.message && data.message.id);
+  if (id) {
+    const seen = (await HubbDB.kv.get('notified').catch(() => null)) || [];
+    if (seen.includes(id)) { await saving; return; }
+    await HubbDB.kv.set('notified', seen.concat(id).slice(-100));
+  }
 
   const name = data.title || 'Hubb';
   const list = (unread || []).concat({ text: data.body || 'New message', at: Date.now() }).slice(-10);
