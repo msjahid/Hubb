@@ -1,7 +1,7 @@
 /* Hubb service worker: offline app shell, push notifications, background delivery of queued messages. */
 importScripts('/idb.js');
 
-const CACHE = 'hubb-v8';
+const CACHE = 'hubb-v9';
 const SHELL = [
   '/', '/index.html', '/app.css', '/app.js', '/idb.js', '/manifest.webmanifest',
   '/socket.io/socket.io.min.js',

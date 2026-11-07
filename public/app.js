@@ -4,6 +4,7 @@
   const $ = (s) => document.querySelector(s);
   const DB = self.HubbDB;
 
+  const diag = { live: 'Not started', err: '' };
   const state = {
     token: null,
     me: null,
@@ -204,11 +205,14 @@
     }
     const s = io({ auth: { token: state.token }, transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 500, reconnectionDelayMax: 4000 });
     state.socket = s;
+    s.on('connect', () => { diag.live = 'Connected (' + s.io.engine.transport.name + ')'; diag.err = ''; });
     s.on('connect', async () => { setNet(true); setPresence(state.partnerOnline); await syncMessages(); flushOutbox(); });
     s.on('disconnect', (reason) => {
       setNet(navigator.onLine ? 'reconnecting' : false);
       if (reason === 'io server disconnect') setTimeout(() => s.connect(), 1000);
     });
+    s.on('connect_error', (err) => { diag.live = 'Not connected'; diag.err = (err && (err.message + (err.description ? ' / ' + (err.description.message || err.description) : ''))) || 'unknown'; });
+    s.on('disconnect', (r) => { diag.live = 'Disconnected'; diag.err = r; });
     s.on('connect_error', (err) => {
       if (err && err.message === 'unauthorized') { signedOut(); return; }
       setNet(navigator.onLine ? 'reconnecting' : false);
@@ -515,7 +519,25 @@
   input.addEventListener('focus', () => { if (touch) { panel.classList.add('hidden'); $('#emojiBtn').classList.remove('active'); } });
 
   // ---------------- Profile sheet ----------------
+  async function renderDiag() {
+    const el = $('#diag'); if (!el) return;
+    const lines = [];
+    const sock = state.socket;
+    lines.push('Live connection: ' + (sock && sock.connected ? '✅ ' + diag.live : '❌ ' + diag.live + (diag.err ? ' — ' + diag.err : '')));
+    lines.push('Socket library: ' + (typeof io === 'undefined' ? '❌ not loaded' : '✅ loaded'));
+    lines.push('Internet: ' + (navigator.onLine ? '✅' : '❌ offline'));
+    lines.push('Notification permission: ' + ('Notification' in window ? Notification.permission : 'not supported'));
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+      lines.push('Push registered on this device: ' + (sub ? '✅' : '❌'));
+    } catch (e) { lines.push('Push check error: ' + e.message); }
+    lines.push('Partner online: ' + (state.partnerOnline ? 'yes' : 'no'));
+    el.textContent = lines.join('\n');
+  }
+
   function openSheet() {
+    renderDiag();
     $('#nameInput').value = state.me ? state.me.name : '';
     $('#soundToggle').checked = state.soundOn;
     updateNotifUI();

@@ -12,7 +12,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" href="/icons/favicon-32.png">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="/app.css?v=8">
+  <link rel="stylesheet" href="/app.css?v=9">
 </head>
 <body>
   <!-- Splash while the app restores the saved session -->
@@ -139,13 +139,14 @@
       <div><div class="s-title">Install Hubb</div><div class="s-sub">Add it to your home screen</div></div>
       <button type="button" class="btn-small" id="installBtn2">Install</button>
     </div>
-    <p class="sheet-foot">Signed in permanently on this device 💗<br><span style="opacity:.7">Hubb version 8</span></p>
+    <pre id="diag" style="white-space:pre-wrap;font-size:12px;line-height:1.5;color:var(--muted);background:var(--bg-2);border-radius:12px;padding:10px 12px;margin:12px 0 0;font-family:inherit"></pre>
+    <p class="sheet-foot">Signed in permanently on this device 💗<br><span style="opacity:.7">Hubb version 9</span></p>
   </div>
 
   <div class="toast hidden" id="toast"></div>
 
   <script src="/socket.io/socket.io.min.js"></script>
-  <script src="/idb.js?v=8"></script>
-  <script src="/app.js?v=8"></script>
+  <script src="/idb.js?v=9"></script>
+  <script src="/app.js?v=9"></script>
 </body>
 </html>
