@@ -50,6 +50,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 `);
 
+try { db.exec('ALTER TABLE users ADD COLUMN last_seen INTEGER'); } catch (_) {} // column added once
+
 const q = {
   countUsers: db.prepare('SELECT COUNT(*) AS n FROM users'),
   userByName: db.prepare('SELECT * FROM users WHERE username = ?'),
@@ -59,6 +61,7 @@ const q = {
   updatePass: db.prepare('UPDATE users SET pass = ? WHERE id = ?'),
   updateName: db.prepare('UPDATE users SET name = ? WHERE id = ?'),
   updateAvatar: db.prepare('UPDATE users SET avatar = ? WHERE id = ?'),
+  setLastSeen: db.prepare('UPDATE users SET last_seen = ? WHERE id = ?'),
   insertSession: db.prepare('INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)'),
   sessionUser: db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?'),
   insertMsg: db.prepare('INSERT OR IGNORE INTO messages (id, sender_id, text, created_at) VALUES (?, ?, ?, ?)'),
@@ -222,7 +225,7 @@ app.post('/api/login', (req, res) => {
 
 app.get('/api/me', auth, (req, res) => {
   const partner = q.partnerOf.get(req.user.id);
-  res.json({ me: publicUser(req.user), partner: publicUser(partner), online: [...online.keys()], lastSeen: partner ? lastSeen.get(partner.id) || null : null });
+  res.json({ me: publicUser(req.user), partner: publicUser(partner), online: [...online.keys()], lastSeen: partner && !online.has(partner.id) ? (lastSeen.get(partner.id) || partner.last_seen || null) : null });
 });
 
 app.post('/api/profile', auth, (req, res) => {
@@ -326,8 +329,10 @@ io.on('connection', (socket) => {
     const n = (online.get(uid) || 1) - 1;
     if (n <= 0) {
       online.delete(uid);
-      lastSeen.set(uid, Date.now());
-      io.to('couple').emit('lastseen', { userId: uid, at: lastSeen.get(uid) });
+      const t = Date.now();
+      lastSeen.set(uid, t);
+      q.setLastSeen.run(t, uid);            // saved to the database, so it survives restarts
+      io.to('couple').emit('lastseen', { userId: uid, at: t });
       io.to('couple').emit('presence', { userId: uid, online: false });
     } else online.set(uid, n);
   });

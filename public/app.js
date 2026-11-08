@@ -194,7 +194,7 @@
     s.textContent = on ? 'Active now' : lastSeenText(state.lastSeen);
   }
   function lastSeenText(ts) {
-    if (!ts) return 'last seen a while ago';
+    if (!ts) return 'offline';
     const diff = Date.now() - ts, min = Math.round(diff / 60000);
     if (min < 1) return 'last seen just now';
     if (min < 60) return `last seen ${min} min ago`;
@@ -222,7 +222,7 @@
     const s = io({ auth: { token: state.token }, transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 500, reconnectionDelayMax: 4000 });
     state.socket = s;
     s.on('connect', () => { diag.live = 'Connected (' + s.io.engine.transport.name + ')'; diag.err = ''; });
-    s.on('connect', async () => { setNet(true); setPresence(state.partnerOnline); await syncMessages(); flushOutbox(); });
+    s.on('connect', async () => { setNet(true); setPresence(state.partnerOnline); refreshProfile(); await syncMessages(); flushOutbox(); });
     s.on('disconnect', (reason) => {
       setNet(navigator.onLine ? 'reconnecting' : false);
       if (reason === 'io server disconnect') setTimeout(() => s.connect(), 1000);
