@@ -138,6 +138,7 @@
     try {
       const d = await api('/api/me');
       await saveProfile(d.me, d.partner);
+      state.lastSeen = d.lastSeen || null;
       if (d.partner) setPresence(d.online.includes(d.partner.id));
     } catch (_) {}
   }
@@ -188,9 +189,24 @@
     if (!state.partner) return;
     $('#presenceDot').classList.toggle('on', on);
     const s = $('#partnerStatus');
-    s.textContent = on ? 'Active now' : 'Away';
+    if (state.partnerTyping) { s.textContent = 'typing…'; s.classList.add('on'); return; }
     s.classList.toggle('on', on);
+    s.textContent = on ? 'Active now' : lastSeenText(state.lastSeen);
   }
+  function lastSeenText(ts) {
+    if (!ts) return 'last seen a while ago';
+    const diff = Date.now() - ts, min = Math.round(diff / 60000);
+    if (min < 1) return 'last seen just now';
+    if (min < 60) return `last seen ${min} min ago`;
+    const h = Math.round(min / 60);
+    if (h < 24) return `last seen ${h} hour${h > 1 ? 's' : ''} ago`;
+    const d = Math.round(h / 24);
+    if (d === 1) return 'last seen yesterday';
+    if (d < 7) return `last seen ${d} days ago`;
+    return 'last seen ' + new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  // Keep the "x min ago" text fresh while the app is open
+  setInterval(() => { if (state.partner && !state.partnerOnline && state.lastSeen) setPresence(false); }, 30000);
 
   // ---------------- Real-time connection ----------------
   function connect() {
@@ -221,6 +237,11 @@
     s.on('message', (m) => receive(m));
     s.on('presence', (p) => { if (state.partner && p.userId === state.partner.id) setPresence(p.online); });
     s.on('presence:list', (ids) => { if (state.partner) setPresence(ids.includes(state.partner.id)); });
+    s.on('lastseen', (p) => { if (state.partner && p.userId === state.partner.id) { state.lastSeen = p.at; setPresence(false); } });
+    s.on('typing', (p) => {
+      if (!state.partner || p.userId !== state.partner.id) return;
+      state.partnerTyping = p.typing; setPresence(state.partnerOnline);
+    });
     s.on('profile', (u) => {
       if (state.me && u.id === state.me.id) saveProfile(u);
       else { const wasNone = !state.partner; saveProfile(undefined, u); if (wasNone) setPresence(true); }
@@ -456,7 +477,16 @@
     sendBtn.classList.toggle('heart', empty);
     sendBtn.setAttribute('aria-label', empty ? 'Send a heart' : 'Send');
   }
-  input.addEventListener('input', autosize);
+  input.addEventListener('input', () => {
+    autosize();
+    // tell the partner we're typing (at most every 2.5 s); stop after a pause
+    if (state.socket && state.socket.connected && input.value.trim()) {
+      const now = Date.now();
+      if (!input._lastTyping || now - input._lastTyping > 2500) { input._lastTyping = now; state.socket.emit('typing', true); }
+      clearTimeout(input._stopT);
+      input._stopT = setTimeout(() => state.socket && state.socket.connected && state.socket.emit('typing', false), 3000);
+    }
+  });
   const touch = matchMedia('(pointer: coarse)').matches;
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !touch && !e.isComposing) { e.preventDefault(); $('#composer').requestSubmit(); }

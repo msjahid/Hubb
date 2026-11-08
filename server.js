@@ -221,7 +221,8 @@ app.post('/api/login', (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ me: publicUser(req.user), partner: publicUser(q.partnerOf.get(req.user.id)), online: [...online.keys()] });
+  const partner = q.partnerOf.get(req.user.id);
+  res.json({ me: publicUser(req.user), partner: publicUser(partner), online: [...online.keys()], lastSeen: partner ? lastSeen.get(partner.id) || null : null });
 });
 
 app.post('/api/profile', auth, (req, res) => {
@@ -284,6 +285,8 @@ app.use(
 const server = http.createServer(app);
 io = new Server(server, { pingInterval: 10000, pingTimeout: 8000, maxHttpBufferSize: 1e6 });
 const online = new Map(); // userId -> open connection count
+const lastSeen = new Map(); // userId -> time the last connection ended
+const typingTimers = new Map(); // userId -> timeout
 
 io.use((socket, next) => {
   const user = userFromToken(socket.handshake.auth && socket.handshake.auth.token);
@@ -309,12 +312,22 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Typing indicator: relayed live to the partner, never stored
+  socket.on('typing', (on) => {
+    const key = uid;
+    clearTimeout(typingTimers.get(key));
+    socket.to('couple').emit('typing', { userId: uid, typing: !!on });
+    if (on) typingTimers.set(key, setTimeout(() => socket.to('couple').emit('typing', { userId: uid, typing: false }), 4000));
+  });
+
   socket.on('alive', (ack) => { if (typeof ack === 'function') ack([...online.keys()]); });
 
   socket.on('disconnect', () => {
     const n = (online.get(uid) || 1) - 1;
     if (n <= 0) {
       online.delete(uid);
+      lastSeen.set(uid, Date.now());
+      io.to('couple').emit('lastseen', { userId: uid, at: lastSeen.get(uid) });
       io.to('couple').emit('presence', { userId: uid, online: false });
     } else online.set(uid, n);
   });
