@@ -247,3 +247,19 @@ input, textarea { font: inherit; color: inherit; }
 @media (min-width: 800px) {
   .bubble { font-size: 15.5px; }
 }
+
+/* ---------- Live location ---------- */
+.locpanel { z-index: 30; background: var(--bg); display: flex; flex-direction: column; }
+.loc-btn { color: var(--muted); }
+.loc-btn:hover { color: var(--accent); }
+.locbody { flex: 1; overflow-y: auto; padding: 14px 14px 28px; display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 640px; margin: 0 auto; }
+.loc-card { background: var(--surface); border-radius: 22px; padding: 14px; box-shadow: var(--shadow); }
+.loc-who { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.locmap { width: 100%; height: 300px; border: 0; border-radius: 16px; display: block; background: var(--bg-2); }
+.loc-empty { padding: 36px 12px; text-align: center; color: var(--muted); font-size: 14px; }
+.locpanel .btn-primary { display: block; text-align: center; text-decoration: none; margin-top: 12px; }
+.locpanel .seg { margin: 12px 0 0; }
+.loc-card .setting { border: 0; padding: 0; }
+#modeHint { margin: 10px 2px 0; }
+
+[hidden] { display: none !important; }

@@ -12,7 +12,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" href="/icons/favicon-32.png">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="/app.css?v=12">
+  <link rel="stylesheet" href="/app.css?v=13">
 </head>
 <body>
   <!-- Splash while the app restores the saved session -->
@@ -56,6 +56,7 @@
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Install
       </button>
+      <button class="icon-btn loc-btn" id="locBtn" type="button" aria-label="Live location"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="10" r="2.4" fill="currentColor"/></svg></button>
       <button class="avatar-btn" id="meBtn" type="button" aria-label="Your profile and settings">
         <div class="avatar small" id="meAvatar"></div>
       </button>
@@ -140,13 +141,43 @@
       <button type="button" class="btn-small" id="installBtn2">Install</button>
     </div>
     <pre id="diag" style="white-space:pre-wrap;font-size:12px;line-height:1.5;color:var(--muted);background:var(--bg-2);border-radius:12px;padding:10px 12px;margin:12px 0 0;font-family:inherit"></pre>
-    <p class="sheet-foot">Signed in permanently on this device 💗<br><span style="opacity:.7">Hubb version 12</span></p>
+    <p class="sheet-foot">Signed in permanently on this device 💗<br><span style="opacity:.7">Hubb version 13</span></p>
   </div>
+
+  <!-- Live location -->
+  <section id="locPanel" class="screen locpanel hidden">
+    <header class="topbar">
+      <button class="icon-btn" id="locClose" type="button" aria-label="Close">✕</button>
+      <div class="who"><div class="who-name">Live location</div><div class="who-status" id="locUpdated"></div></div>
+      <button class="icon-btn" id="locRefresh" type="button" aria-label="Refresh">⟳</button>
+    </header>
+    <div class="locbody">
+      <div class="loc-card">
+        <div class="loc-who"><div class="avatar" id="locAvatar"></div>
+          <div><div class="s-title" id="locName">Partner</div><div class="s-sub" id="locState"></div></div></div>
+        <iframe id="locMap" class="locmap" title="Partner's location map" hidden></iframe>
+        <div class="loc-empty" id="locEmpty" hidden></div>
+        <a id="locOpen" class="btn-primary" target="_blank" rel="noopener" hidden>Open in Maps</a>
+      </div>
+      <div class="loc-card">
+        <div class="setting">
+          <div><div class="s-title">Share my location</div><div class="s-sub" id="myState">Off</div></div>
+          <label class="switch"><input type="checkbox" id="shareToggle"><span></span></label>
+        </div>
+        <div class="seg" id="modeSeg">
+          <button type="button" data-mode="battery">Battery saver</button>
+          <button type="button" data-mode="balanced" class="active">Balanced</button>
+          <button type="button" data-mode="precise">Precise</button>
+        </div>
+        <p class="s-sub" id="modeHint"></p>
+      </div>
+    </div>
+  </section>
 
   <div class="toast hidden" id="toast"></div>
 
   <script src="/socket.io/socket.io.min.js"></script>
-  <script src="/idb.js?v=12"></script>
-  <script src="/app.js?v=12"></script>
+  <script src="/idb.js?v=13"></script>
+  <script src="/app.js?v=13"></script>
 </body>
 </html>

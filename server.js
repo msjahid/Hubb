@@ -50,6 +50,9 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 `);
 
+db.exec(`CREATE TABLE IF NOT EXISTS locations (
+  user_id INTEGER PRIMARY KEY, lat REAL, lng REAL, acc REAL, at INTEGER,
+  sharing INTEGER NOT NULL DEFAULT 0, mode TEXT NOT NULL DEFAULT 'balanced');`);
 try { db.exec('ALTER TABLE users ADD COLUMN last_seen INTEGER'); } catch (_) {} // column added once
 
 const q = {
@@ -62,6 +65,14 @@ const q = {
   updateName: db.prepare('UPDATE users SET name = ? WHERE id = ?'),
   updateAvatar: db.prepare('UPDATE users SET avatar = ? WHERE id = ?'),
   setLastSeen: db.prepare('UPDATE users SET last_seen = ? WHERE id = ?'),
+  loc: db.prepare('SELECT * FROM locations WHERE user_id = ?'),
+  upsertLoc: db.prepare(`INSERT INTO locations (user_id, lat, lng, acc, at, sharing, mode) VALUES (?, ?, ?, ?, ?, 1, 'balanced')
+    ON CONFLICT(user_id) DO UPDATE SET lat = excluded.lat, lng = excluded.lng, acc = excluded.acc, at = excluded.at`),
+  setSharing: db.prepare(`INSERT INTO locations (user_id, sharing, mode) VALUES (?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET sharing = excluded.sharing, mode = excluded.mode,
+      lat = CASE WHEN excluded.sharing = 0 THEN NULL ELSE locations.lat END,
+      lng = CASE WHEN excluded.sharing = 0 THEN NULL ELSE locations.lng END,
+      at = CASE WHEN excluded.sharing = 0 THEN NULL ELSE locations.at END`),
   insertSession: db.prepare('INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)'),
   sessionUser: db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?'),
   insertMsg: db.prepare('INSERT OR IGNORE INTO messages (id, sender_id, text, created_at) VALUES (?, ?, ?, ?)'),
@@ -265,6 +276,41 @@ app.post('/api/push/test', auth, (req, res) => {
   const n = q.subsFor.all(req.user.id).length;
   pushTo(req.user.id, { title: 'Hubb', body: 'Notifications are working 💞', test: true });
   res.json({ devices: n });
+});
+
+// ---------- Live location (web: updates while Hubb is open) ----------
+const MODES = ['battery', 'balanced', 'precise'];
+function locView(userId) {
+  const r = q.loc.get(userId);
+  return r ? { sharing: !!r.sharing, mode: r.mode, lat: r.lat, lng: r.lng, acc: r.acc, at: r.at }
+           : { sharing: false, mode: 'balanced', lat: null, lng: null, acc: null, at: null };
+}
+app.get('/api/location', auth, (req, res) => {
+  const partner = q.partnerOf.get(req.user.id);
+  const me = locView(req.user.id);
+  const p = partner ? locView(partner.id) : null;
+  res.json({
+    me: { sharing: me.sharing, mode: me.mode },
+    partnerSharing: !!(p && p.sharing),
+    partner: p && p.sharing && p.lat != null ? { lat: p.lat, lng: p.lng, acc: p.acc, at: p.at } : null,
+  });
+});
+app.post('/api/location', auth, (req, res) => {
+  const { lat, lng, acc } = req.body || {};
+  if (!locView(req.user.id).sharing) return res.status(403).json({ error: 'Sharing is off' });
+  if (typeof lat !== 'number' || typeof lng !== 'number' || Math.abs(lat) > 90 || Math.abs(lng) > 180) return res.status(400).json({ error: 'Bad location' });
+  const t = Date.now();
+  q.upsertLoc.run(req.user.id, lat, lng, typeof acc === 'number' ? acc : null, t);
+  io.to('couple').emit('location:update', { userId: req.user.id, at: t });
+  res.json({ ok: true });
+});
+app.post('/api/location/settings', auth, (req, res) => {
+  const { sharing, mode } = req.body || {};
+  const m = MODES.includes(mode) ? mode : locView(req.user.id).mode;
+  const on = !!sharing;
+  q.setSharing.run(req.user.id, on ? 1 : 0, m);   // turning sharing off also clears the last point
+  io.to('couple').emit('location:update', { userId: req.user.id, at: Date.now() });
+  res.json({ sharing: on, mode: m });
 });
 
 app.get('/api/push/key', (req, res) => res.json({ key: vapid.publicKey }));

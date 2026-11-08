@@ -237,6 +237,7 @@
     s.on('message', (m) => receive(m));
     s.on('presence', (p) => { if (state.partner && p.userId === state.partner.id) setPresence(p.online); });
     s.on('presence:list', (ids) => { if (state.partner) setPresence(ids.includes(state.partner.id)); });
+    s.on('location:update', () => loadLocation());
     s.on('lastseen', (p) => { if (state.partner && p.userId === state.partner.id) { state.lastSeen = p.at; setPresence(false); } });
     s.on('typing', (p) => {
       if (!state.partner || p.userId !== state.partner.id) return;
@@ -713,5 +714,97 @@
   // refresh relative day labels after midnight
   setInterval(() => { if (!document.hidden && state.token) renderAll(true); }, 30 * 60 * 1000);
 
-  boot().catch((e) => { console.error(e); showAuth(); });
+
+  // ---------------- Live location ----------------
+  const LOC = { sharing: false, mode: 'balanced', partner: null, partnerSharing: false, timer: null };
+  const MODE_MS = { battery: 10 * 60000, balanced: 4 * 60000, precise: 60000 };
+  const MODE_HINT = {
+    battery: 'Updates about every 10 minutes. Uses the least battery.',
+    balanced: 'Updates about every 4 minutes. A good balance.',
+    precise: 'Updates about every minute. Uses more battery.',
+  };
+  const ago = (ts) => {
+    const m = Math.round((Date.now() - ts) / 60000);
+    return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago';
+  };
+
+  function syncLocUI() {
+    $('#shareToggle').checked = LOC.sharing;
+    $('#myState').textContent = LOC.sharing ? 'On — your partner can see where you are' : 'Off';
+    document.querySelectorAll('#modeSeg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === LOC.mode));
+    $('#modeHint').textContent = MODE_HINT[LOC.mode];
+    const p = state.partner;
+    $('#locName').textContent = p ? p.name : 'Partner';
+    setAvatar($('#locAvatar'), p);
+    const L = LOC.partner, map = $('#locMap'), open = $('#locOpen'), empty = $('#locEmpty');
+    if (L) {
+      const lat = L.lat, lng = L.lng, dLat = 0.005, dLng = 0.0075;
+      const bbox = [lng - dLng, lat - dLat, lng + dLng, lat + dLat].join(',');
+      const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
+      if (map.dataset.src !== src) { map.src = src; map.dataset.src = src; }
+      map.hidden = false; empty.hidden = true;
+      open.href = `https://www.google.com/maps?q=${lat},${lng}`; open.hidden = false;
+      const stale = Date.now() - L.at > 15 * 60000;
+      $('#locState').textContent = stale ? 'Last known location' : 'Sharing live';
+      $('#locUpdated').textContent = 'Updated ' + ago(L.at) + (stale ? ' · their Hubb may be closed' : '');
+    } else {
+      map.hidden = true; open.hidden = true; empty.hidden = false;
+      empty.textContent = p ? `${p.name} isn't sharing location right now.` : 'Waiting for your partner.';
+      $('#locState').textContent = 'Not sharing';
+      $('#locUpdated').textContent = '';
+    }
+  }
+
+  async function loadLocation() {
+    if (!state.token) return;
+    try {
+      const d = await api('/api/location');
+      LOC.sharing = d.me.sharing; LOC.mode = d.me.mode;
+      LOC.partner = d.partner; LOC.partnerSharing = d.partnerSharing;
+      syncLocUI();
+    } catch (_) {}
+  }
+
+  function stopSharing() { clearInterval(LOC.timer); LOC.timer = null; }
+  function startSharing() {
+    stopSharing();
+    if (!navigator.geolocation) return toast('Location is not supported on this device');
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;   // the web app can only read location while open
+      navigator.geolocation.getCurrentPosition(
+        (pos) => api('/api/location', { method: 'POST', body: { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy } }).catch(() => {}),
+        (err) => toast(err.code === 1 ? 'Location is blocked. Allow it in the browser or phone settings.' : 'Could not get your location right now'),
+        { enableHighAccuracy: LOC.mode === 'precise', maximumAge: MODE_MS[LOC.mode] / 2, timeout: 20000 }
+      );
+    };
+    tick();
+    LOC.timer = setInterval(tick, MODE_MS[LOC.mode]);
+  }
+
+  async function saveLocSettings(on, mode) {
+    const d = await api('/api/location/settings', { method: 'POST', body: { sharing: on, mode } });
+    LOC.sharing = d.sharing; LOC.mode = d.mode;
+    if (LOC.sharing) startSharing(); else stopSharing();
+    syncLocUI();
+  }
+
+  $('#locBtn').addEventListener('click', () => { $('#locPanel').classList.remove('hidden'); loadLocation(); });
+  $('#locClose').addEventListener('click', () => $('#locPanel').classList.add('hidden'));
+  $('#locRefresh').addEventListener('click', loadLocation);
+  $('#shareToggle').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    try {
+      await saveLocSettings(on, LOC.mode);
+      toast(on ? 'Your partner can now see where you are' : 'Location sharing is off');
+    } catch (err) { e.target.checked = !on; toast(err.message); }
+  });
+  document.querySelectorAll('#modeSeg button').forEach((b) => b.addEventListener('click', async () => {
+    try { await saveLocSettings(LOC.sharing, b.dataset.mode); } catch (err) { toast(err.message); }
+  }));
+  setInterval(() => { if (!$('#locPanel').classList.contains('hidden') && LOC.partner) $('#locUpdated').textContent = 'Updated ' + ago(LOC.partner.at); }, 30000);
+  setInterval(() => { if (!$('#locPanel').classList.contains('hidden')) loadLocation(); }, 60000);
+
+  boot().then(() => {
+    if (state.token) loadLocation().then(() => { if (LOC.sharing) startSharing(); });
+  }).catch((e) => { console.error(e); showAuth(); });
 })();
